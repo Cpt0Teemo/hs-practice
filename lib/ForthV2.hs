@@ -2,13 +2,11 @@
 module ForthV2 where
 
 import qualified Data.Map as M
-import Data.Text (Text, unpack, pack, toLower, head)
-import Control.Monad.Trans.State.Lazy ( StateT (runStateT), modify, get, put, gets)
-import Control.Monad.Trans.Except (Except, throwE, runExcept)
-import Foreign.Marshal.Safe (with)
-import Control.Monad.Trans.Class (lift)
-import Data.Char (isDigit, isAlpha)
 import qualified Data.Text as T
+import Control.Monad.Trans.State.Lazy ( StateT (runStateT), modify, gets)
+import Control.Monad.Trans.Except (Except, throwE, runExcept)
+import Control.Monad.Trans.Class (lift)
+import Data.Char (isDigit)
 
 type StateEither s e a = StateT s (Except e) a
 type ForthStateMonad a = StateEither ForthState ForthError a
@@ -17,7 +15,7 @@ data ForthError
      = DivisionByZero
      | StackUnderflow
      | InvalidWord
-     | UnknownWord Text
+     | UnknownWord T.Text
      deriving (Show, Eq)
 
 data ForthState = ForthState {
@@ -28,22 +26,22 @@ data ForthState = ForthState {
 emptyState :: ForthState
 emptyState = ForthState [] mempty
 
-evalText :: Text -> ForthState -> Either ForthError ForthState
-evalText text state
-    | Data.Text.head text == ':'  = 
-        case commands of
-            (":" : keyword : xs) | validKeyword keyword -> do
-                                    commands' <- replaceKeywordsWithCommands (customKeywords state) . init $ xs
-                                    return $ addKeyword keyword commands' state
-            _                    -> Left InvalidWord
-    | otherwise                   = fmap snd . runExcept . runStateT (foldState commands) $ state
+evalText :: T.Text -> ForthState -> Either ForthError ForthState
+evalText = evalText' . words . T.unpack . T.toLower
+
+evalText' :: [String] -> ForthState -> Either ForthError ForthState
+evalText' (":" : keyword : xs) state
+    | validKeyword keyword = do
+        commands' <- replaceKeywordsWithCommands (customKeywords state) . init $ xs
+        return $ addKeyword keyword commands' state
+    | otherwise = Left InvalidWord
     where
-        commands = words . unpack . toLower $ text
-        validKeyword = not . isDigit . Prelude.head
-        addKeyword keyword commands' state' = state { customKeywords = M.insert keyword commands' (customKeywords state')}
+        validKeyword = not . isDigit . head
+        addKeyword keyword' commands' state' = state { customKeywords = M.insert keyword' commands' (customKeywords state')}
+evalText' commands state = fmap snd . runExcept . runStateT (foldState commands) $ state
 
 replaceKeywordsWithCommands :: M.Map String [String] -> [String] -> Either ForthError [String]
-replaceKeywordsWithCommands customKeywords commands = fmap (foldl (<>) []) . traverse replaceKeywordsWithCommands $ commands
+replaceKeywordsWithCommands customKeywords = fmap (foldl (<>) []) . traverse replaceKeywordsWithCommands
     where
         allowedKeywords = ["+","-","*","/","dup","over","drop","swap"]
         replaceKeywordsWithCommands command
@@ -91,7 +89,7 @@ parseCommand' command =
     if all isDigit command then 
         putItem . read $ command 
     else 
-        throwForthError $ UnknownWord (pack command)
+        throwForthError $ UnknownWord (T.pack command)
 
 throwForthError = lift . throwE
 
