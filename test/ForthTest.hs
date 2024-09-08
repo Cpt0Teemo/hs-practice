@@ -4,7 +4,7 @@ module ForthTest where
 import Control.Monad     (foldM)
 import Test.Hspec        (Spec, describe, it, shouldBe)
 import Test.Hspec.Runner (configFailFast, defaultConfig, hspecWith)
-import Forth (ForthError(..), emptyState, evalText, toList)
+import ForthV2 (ForthError(..), emptyState, evalText, toList)
 
 specs :: Spec
 specs = do
