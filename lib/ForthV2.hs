@@ -7,7 +7,8 @@ import Control.Monad.Trans.State.Lazy ( StateT (runStateT), modify, get, put, ge
 import Control.Monad.Trans.Except (Except, throwE, runExcept)
 import Foreign.Marshal.Safe (with)
 import Control.Monad.Trans.Class (lift)
-import Data.Char (isDigit)
+import Data.Char (isDigit, isAlpha)
+import qualified Data.Text as T
 
 type StateEither s e a = StateT s (Except e) a
 type ForthStateMonad a = StateEither ForthState ForthError a
@@ -29,10 +30,26 @@ emptyState = ForthState [] mempty
 
 evalText :: Text -> ForthState -> Either ForthError ForthState
 evalText text state
-    | Data.Text.head text == ':'  = undefined
+    | Data.Text.head text == ':'  = 
+        case commands of
+            (":" : keyword : xs) | validKeyword keyword -> do
+                                    commands' <- replaceKeywordsWithCommands (customKeywords state) . init $ xs
+                                    return $ addKeyword keyword commands' state
+            _                    -> Left InvalidWord
     | otherwise                   = fmap snd . runExcept . runStateT (foldState commands) $ state
     where
         commands = words . unpack . toLower $ text
+        validKeyword = not . isDigit . Prelude.head
+        addKeyword keyword commands' state' = state { customKeywords = M.insert keyword commands' (customKeywords state')}
+
+replaceKeywordsWithCommands :: M.Map String [String] -> [String] -> Either ForthError [String]
+replaceKeywordsWithCommands customKeywords commands = fmap (foldl (<>) []) . traverse replaceKeywordsWithCommands $ commands
+    where
+        allowedKeywords = ["+","-","*","/","dup","over","drop","swap"]
+        replaceKeywordsWithCommands command
+            | all isDigit command || command `elem` allowedKeywords = return [command]
+            | M.member command customKeywords = return . (M.!) customKeywords $ command
+            | otherwise = Left . UnknownWord . T.pack $ command 
 
 foldState :: [String] -> StateT ForthState (Except ForthError) ()
 foldState [] = error "Empty command"
@@ -47,7 +64,7 @@ parseCommand command = do
     keywords <- gets customKeywords
     case command `M.lookup` keywords of
         Nothing -> parseCommand' command
-        Just a -> undefined
+        Just commands -> foldState commands
 
 parseCommand' :: String -> StateT ForthState (Except ForthError) ()
 parseCommand' "+" = applyOnStack (+)
